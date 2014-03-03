@@ -52,7 +52,6 @@ double totalDelta = 0; // The total delta since start of operation (I)
 void setup() 
 { 
   Serial.begin(57600);
-  //Serial.begin(9600);
   motor.attach(9);  // attaches the servo on pin 9 to the servo object 
   servo.attach(11);
   Wire.begin();
@@ -143,7 +142,6 @@ void loop()
   Serial.println(currentDelta);
   
   int potpos = ((float)potValue / 1023) * 180;    
-  ////Serial.println(potpos);
      
   //motor.write(potpos);   
       
