@@ -25,12 +25,14 @@ Control algorithm notes:
 #define POSNEUTRAL 90
 #define SPINDOWNDELAY 90 // ms between spin up and down intervals
 
-#define PCONST -0.1
-#define ICONST 0.0
-#define DCONST 0.0001
-#define POSITIVEBIAS 1.5 // scale factor for positive movement instead of negative movement to compensate for more powerful slowing down
+#define PCONST -0.0001
+#define ICONST -0.000001
+#define DCONST -0.005
+#define BRAKEZONE 15 // signal corresponding to when we detect braking
+#define BRAKEREDUCTIONFACTOR 0.2 // scale factor for braking power
 #define SPINDOWNTHRESHOLD 99999
-#define UPDATECYCLECOUNT 10
+
+#define CALIBRATEMOTOR false // flag to indicate if we are in the mode of calibrating the motor
  
 Servo motor;  // Use a servo to control the PWM of the speed controller
 Servo servo;
@@ -42,7 +44,7 @@ int potValue = 0;
 int potPin = A0;
 int changeIntervalCount = 0;
 float atRestZ = 0;
-int updateCycle = 0;
+double desiredPosition = POSNEUTRAL;
 
 // Values used in the PID Calculation
 double currentDelta = 0; // The current position (P)
@@ -64,6 +66,11 @@ void setup()
 
   // Sets the sample rate divider to 10 (equates to roughly 100 samples per second)
   SendOneByte(GYROADDRESS, byte(0x15), byte(0x0A));
+  
+  if (CALIBRATEMOTOR)
+  {
+    CalibrateMotor();
+  }
    
   motor.write(POSNEUTRAL);
   
@@ -73,10 +80,7 @@ void setup()
   
   delay(1 * 1000);
   
-  pos = POSNEUTRAL;
-    
-  // Improve the algo to pay more attention to the speed and slow down before hitting the target position
-  // Use absolute time based delays rather than delay values like we have now
+  desiredPosition = POSNEUTRAL;
 } 
  
  
@@ -131,9 +135,9 @@ void loop()
     currentDelta = currentDelta + (zout - atRestZ);
   }
   
-  pos = GetNextPosition(pos, currentDelta);
+  desiredPosition = GetNextPosition(desiredPosition, currentDelta);
   
-  Serial.print(pos);
+  Serial.print(desiredPosition);
   Serial.print(",");
   Serial.print(atRestZ);
   Serial.print(",");
@@ -151,8 +155,8 @@ void loop()
   }  
   else
   {
-    motor.write(pos);
-  } 
+    motor.write((int)desiredPosition);
+  }
   
 //  servo.write(servoPos);
   servo.write(0);    
@@ -204,45 +208,29 @@ float SetAtRestZ()
 }
 
 // Gets the next signal to send to the controller. Also tracks the delta over time to determine speed and integral
-int GetNextPosition(int current, double currentDelta)
+double GetNextPosition(double current, double currentDelta)
 {
-    updateCycle++;
-    
-    if (updateCycle < UPDATECYCLECOUNT)
-    {
-      return current;
-    }
-    else
-    {
-      updateCycle = 0;
-    
-    /*
-      if (currentDelta > SPINDOWNTHRESHOLD)
-      {
-          return GetNextPositionSpinUp(current);
-      }
-      else if (currentDelta < -SPINDOWNTHRESHOLD)
-      {
-          return GetNextPositionSpinDown(current);
-      }*/
-  
+
       float speed = currentDelta - previousDelta;
       previousDelta = currentDelta;
       
       totalDelta += currentDelta;
       
-      // Now we have all of the variables we need for PID
+      // Now we have all of the variables we need for 
+      double positionChange = PCONST * currentDelta + DCONST * speed + ICONST * totalDelta;
+
+      //current += positionChange;
+      positionChange *= 10;
       
-      double positionChange = PCONST * currentDelta + DCONST * speed;
+      if (positionChange < BRAKEZONE && positionChange > -BRAKEZONE && (positionChange + POSNEUTRAL) < current && (positionChange + POSNEUTRAL) > -current)
+      {
+        positionChange *= BRAKEREDUCTIONFACTOR;
+      }
       
-      // Depending on the style of positionChange, we may need to add a single directional bias, e.g we know that slowing down is
-      // much more powerful than speeding up, so when positionChange is negative we should compensate for that a bit
-      //if (positionChange > 0)
-      //{
-      //    positionChange *= POSITIVEBIAS;
-      //}
+      current = positionChange + POSNEUTRAL;
       
-      current += (int)positionChange;
+      // When positionChange gets close to 0, ie we are close to coming to a stop, we should add a reduction factor because the motor will suddenly have a lot more power
+      // due to trying to brake
       
       if (current <= POSMIN)
       {
@@ -255,9 +243,6 @@ int GetNextPosition(int current, double currentDelta)
       }
       
       return current;
-      // May need additional logic here to recover from situations where the motor is maxed out or stopped and the delta is not at zero
-      // we may need a way to spin up/down very slowly to not overcome the static friction and then apply the proper force to regain position.
-    }
 }
 
 // Gets the next value to send to the controller on the spin down routine (slowly spin down and snap fast at the end)
@@ -297,4 +282,14 @@ void SendOneByte(byte deviceAdd, byte registerAdd, byte value)
     Wire.write(registerAdd); // Set register pointer to the register we want to write to
     Wire.write(value); // Set value of this register to the provided value
     Wire.endTransmission();
+}
+
+void CalibrateMotor()
+{
+  motor.write(POSMAX);
+  delay(4 * 1000);
+  motor.write(POSMIN);
+  delay(4 * 1000);
+  motor.write(POSNEUTRAL);
+  delay(6 * 1000);
 }

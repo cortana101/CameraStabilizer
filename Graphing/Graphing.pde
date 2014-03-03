@@ -64,7 +64,7 @@
      print(",");
      println(currentDelta);
      
-     inByte = map(inByte, 0, 180, 0, height / 3);
+     inByte = map(inByte, -10, 190, 0, height / 3);
      
      // The inByte
      stroke(127,34,255);
@@ -84,7 +84,7 @@
      stroke(30, 150, 255);
      point(xPos, height / 3 - inByteZ);
      
-     float currentDeltaPoint = map(currentDelta, -10000, 10000, 0, height / 3);
+     float currentDeltaPoint = map(currentDelta, -20000, 20000, 0, height / 3);
      stroke(255, 255, 255);
      point(xPos, height - currentDeltaPoint);
      
